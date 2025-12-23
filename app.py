@@ -2,6 +2,19 @@
 import re
 import json
 import streamlit as st
+
+import os
+import streamlit as st
+from openai import OpenAI
+
+api_key = st.secrets.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+if not api_key:
+    st.error("没检测到 OPENAI_API_KEY")
+    st.stop()
+
+client = OpenAI(api_key=api_key)
+
+
 from typing import List, Literal
 from pydantic import BaseModel, Field, ValidationError
 from openai import OpenAI
@@ -211,23 +224,6 @@ def call_model(user_text: str) -> TutorTurn:
     messages += st.session_state.history[-10:]
     messages.append({"role": "user", "content": user_text})
 
-    # 直接让模型输出 JSON，然后解析（最稳）
-    resp = client.responses.create(
-        model=model,
-        input=messages,
-    )
-    text = resp.output_text.strip()
-
-    # 处理偶尔出现的 ```json 包裹
-    if text.startswith("```"):
-        parts = text.split("```")
-        text = parts[1].replace("json", "").strip() if len(parts) >= 2 else text
-
-    data = json.loads(text)
-    return TutorTurn.model_validate(data)
-
-
-    # 优先：结构化解析
     try:
         resp = client.responses.parse(
             model=model,
@@ -235,30 +231,15 @@ def call_model(user_text: str) -> TutorTurn:
             text_format=TutorTurn,
         )
         return resp.output_parsed
-    except Exception:
-        # 兼容：让模型只输出 JSON，再手动解析
-        fallback_prompt = (
-            SYSTEM_PROMPT
-            + "\n\n重要：只输出一个 JSON 对象，不要输出任何额外文字。"
-            + "\n必须满足 TutorTurn 的全部字段。"
+    except Exception as e:
+        st.session_state["last_error"] = str(e)
+        return TutorTurn(
+            reply_ja="すみません、API呼び出しに失敗しました。APIキー/ネットワーク/モデル名を確認してください。",
+            corrected_sentence_ja="",
+            more_natural_ja="",
+            next_question_ja="もう一度送信してみてください。",
+            fluency_score=0,
         )
-        messages2 = [{"role": "system", "content": fallback_prompt}]
-        messages2 += st.session_state.history[-10:]
-        messages2.append({"role": "user", "content": user_text})
-
-        resp2 = client.responses.create(
-            model=model,
-            input=messages2,
-        )
-        text = resp2.output_text.strip()
-
-        # 处理模型偶尔加```json```的情况
-        if text.startswith("```"):
-            text = text.split("```", 2)[1]
-            text = text.replace("json", "", 1).strip()
-
-        data = json.loads(text)
-        return TutorTurn.model_validate(data)
 
 st.write("输入一句日语开始练习：")
 user_text = st.text_input("あなたの文", value="", placeholder="例：今日は学校でプレゼンがありました。")
