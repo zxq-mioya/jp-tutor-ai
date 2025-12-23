@@ -3,6 +3,7 @@ import streamlit as st
 from typing import List, Literal
 from pydantic import BaseModel, Field, ValidationError
 from openai import OpenAI
+from pathlib import Path
 
 # -----------------------------
 # 1) 结构化输出（纠错结果的固定格式）
@@ -58,6 +59,56 @@ if "OPENAI_API_KEY" in st.secrets:
 ##
 
 client = OpenAI()
+
+@st.cache_data
+def load_kb_text() -> str:
+    kb_path = Path(__file__).with_name("grammar_kb.md")
+    if not kb_path.exists():
+        return ""
+    return kb_path.read_text(encoding="utf-8")
+
+def parse_kb_entries(kb_text: str):
+    entries = []
+    cur = None
+    for line in kb_text.splitlines():
+        if line.startswith("## [KB") and "]" in line:
+            if cur:
+                entries.append(cur)
+            kb_id = line.split("]")[0].replace("## [", "").strip()
+            title = line.split("]")[1].strip()
+            cur = {"id": kb_id, "title": title, "triggers": [], "text_lines": [line]}
+        elif cur is not None:
+            cur["text_lines"].append(line)
+            if line.startswith("- triggers:"):
+                trig = line.split(":", 1)[1].strip()
+                cur["triggers"] = [t.strip() for t in trig.split(",") if t.strip()]
+    if cur:
+        entries.append(cur)
+    for e in entries:
+        e["text"] = "\n".join(e["text_lines"]).strip()
+    return entries
+
+def select_kb(entries, query: str, topk: int = 3):
+    q = (query or "").strip()
+    if not q or not entries:
+        return []
+    scored = []
+    for e in entries:
+        score = 0
+        for t in e.get("triggers", []):
+            if t and t in q:
+                score += 3
+        if score > 0:
+            scored.append((score, e))
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [e for _, e in scored[:topk]]
+
+kb_text = load_kb_text()
+kb_entries = parse_kb_entries(kb_text)
+
+use_kb = st.checkbox("使用语法知识库（KB）", value=True)
+kb_topk = st.slider("引用KB条目数", 1, 4, 3)
+
 
 SYSTEM_PROMPT = f"""
 你是一个“日语会话老师+逐句纠错器”。
@@ -118,10 +169,61 @@ def render_turn(result: TutorTurn):
         st.subheader("ミニレッスン")
         st.write(result.mini_lesson_ja)
 
+##def call_model(user_text: str) -> TutorTurn:
+##    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+##    messages += st.session_state.history[-10:]
+##    messages.append({"role": "user", "content": user_text})
+
+def build_system_prompt(user_text: str) -> str:
+    selected = select_kb(kb_entries, user_text, kb_topk) if use_kb else []
+    kb_refs = ""
+    kb_ids = []
+    if selected:
+        kb_refs = "\n\n".join([e["text"][:1200] for e in selected])
+        kb_ids = [e["id"] for e in selected]
+
+    return f"""
+你是一个“日语会话老师+逐句纠错器”。
+
+对话设定：
+- 学习者目标水平：{level}
+- 对话语气：{tone}
+- 主题：{topic}
+- 纠错严格度：{strictness}/5
+
+【参考資料：文法ノート（KB）】
+{kb_refs}
+
+硬性规则：
+- mini_lesson_ja 与理由解释要尽量依据KB内容来讲，不要编造“教材规则”。
+- 如果KB没有覆盖，就只给非常保守的解释（别瞎定规则）。
+- mini_lesson_ja 末尾必须标注（参照: {", ".join(kb_ids) if kb_ids else "なし"}）
+
+输出必须严格符合 TutorTurn 结构（只输出JSON对象，不要Markdown，不要多余文字）。
+"""
+
 def call_model(user_text: str) -> TutorTurn:
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    sys_prompt = build_system_prompt(user_text)
+
+    messages = [{"role": "system", "content": sys_prompt}]
     messages += st.session_state.history[-10:]
     messages.append({"role": "user", "content": user_text})
+
+    # 直接让模型输出 JSON，然后解析（最稳）
+    resp = client.responses.create(
+        model=model,
+        input=messages,
+    )
+    text = resp.output_text.strip()
+
+    # 处理偶尔出现的 ```json 包裹
+    if text.startswith("```"):
+        parts = text.split("```")
+        text = parts[1].replace("json", "").strip() if len(parts) >= 2 else text
+
+    data = json.loads(text)
+    return TutorTurn.model_validate(data)
+
 
     # 优先：结构化解析
     try:
