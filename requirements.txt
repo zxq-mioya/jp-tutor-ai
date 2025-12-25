@@ -1,3 +1,5 @@
-openai==1.9.0
-streamlit
-pydantic
+streamlit==1.41.1
+openai==1.59.7
+httpx==0.28.1
+pydantic==2.10.3
+PyYAML==6.0.2
