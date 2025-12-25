@@ -1,4 +1,13 @@
+# venv
 .venv/
+venv/
+
+# python
 __pycache__/
-.streamlit/secrets.toml
 *.pyc
+
+# streamlit secrets (不要上传)
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
