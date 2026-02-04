@@ -231,17 +231,28 @@ def call_model(user_text: str) -> TutorTurn:
             text_format=TutorTurn,
         )
         return resp.output_parsed
+    
+    # 找到你的 try...except 块
     except Exception as e:
-        st.session_state["last_error"] = str(e)
+        import streamlit as st
+        st.error(f"详细错误信息: {e}")  # <--- 加上这一行，直接把错误显示在网页上
+    
         return TutorTurn(
-            reply_ja="すみません、API呼び出しに失敗しました。APIキー/ネットワーク/モデル名を確認してください。",
-            mini_lesson_ja="APIエラーのため、解説はありません。",  # <--- 加上这一行
-            corrected_sentence_ja="",
-            more_natural_ja="",
-            next_question_ja="もう一度送信してみてください。",
-            fluency_score=0,
-        )
-
+        reply_ja="すみません、API呼び出しに失敗しました...",
+        mini_lesson_ja="APIエラー",
+        fluency_score=0
+    )
+#    except Exception as e:
+#        st.session_state["last_error"] = str(e)
+#        return TutorTurn(
+#            reply_ja="すみません、API呼び出しに失敗しました。APIキー/ネットワーク/モデル名を確認してください。",
+#            mini_lesson_ja="APIエラーのため、解説はありません。",  # <--- 加上这一行
+#            corrected_sentence_ja="",
+#            more_natural_ja="",
+#            next_question_ja="もう一度送信してみてください。",
+#            fluency_score=0,
+#       )
+#
 st.write("输入一句日语开始练习：")
 user_text = st.text_input("あなたの文", value="", placeholder="例：今日は学校でプレゼンがありました。")
 
