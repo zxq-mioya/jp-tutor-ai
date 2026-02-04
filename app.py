@@ -235,6 +235,7 @@ def call_model(user_text: str) -> TutorTurn:
         st.session_state["last_error"] = str(e)
         return TutorTurn(
             reply_ja="すみません、API呼び出しに失敗しました。APIキー/ネットワーク/モデル名を確認してください。",
+            mini_lesson_ja="APIエラーのため、解説はありません。",  # <--- 加上这一行
             corrected_sentence_ja="",
             more_natural_ja="",
             next_question_ja="もう一度送信してみてください。",
