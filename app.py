@@ -234,7 +234,7 @@ def call_model(user_text: str) -> TutorTurn:
     
     # 找到你的 try...except 块
     except Exception as e:
-        import streamlit as st
+#        import streamlit as st
         st.error(f"详细错误信息: {e}")  # <--- 加上这一行，直接把错误显示在网页上
     
         return TutorTurn(
